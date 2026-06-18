@@ -4,7 +4,7 @@ EndstoneQuest is a simple quest plugin for Endstone Bedrock servers. Quests are 
 
 ## Files
 
-- `bedrock_server/plugins/endstone_quest-0.1.1-py2.py3-none-any.whl` - installed plugin wheel.
+- `bedrock_server/plugins/endstone_quest-0.1.4-py2.py3-none-any.whl` - installed plugin wheel.
 - `bedrock_server/plugins/quest/config.json` - plugin settings and messages.
 - `bedrock_server/plugins/quest/quests.json` - quest definitions.
 - `bedrock_server/plugins/quest/players.json` - generated player progress data.
@@ -90,11 +90,13 @@ Event-tracked objectives:
 - `deal_damage`
 - `consume`
 - `breed`
+- `custom`
 
 Notes:
 
 - `fish` counts picked-up fish items such as cod, salmon, tropical fish, and pufferfish.
 - `tame`, `shear`, and `breed` are credited from successful player interaction events that match known entity/item combinations. Endstone 0.11 does not expose separate success-state events for these actions.
+- `custom` is credited through `/scriptevent`, which lets other plugins or add-ons trigger quest progress for things EndstoneQuest cannot observe directly.
 
 Supported objective types that currently need manual/admin progress or future Endstone API hooks:
 
@@ -105,6 +107,46 @@ Supported objective types that currently need manual/admin progress or future En
 - `brew`
 
 Several aliases are accepted, such as `playerkilling`, `mobkilling`, `walking`, `smelting`, `dealdamage`, `tamin`, `trading`, `brewing`, and `breeding`.
+
+## Custom Objectives
+
+Use `custom` objectives for plugin-specific actions, such as creating a portal to a custom dimension.
+
+Quest objective example:
+
+```json
+{
+    "id": "make_skylands_portal",
+    "type": "custom",
+    "target": "skylands:portal_created",
+    "amount": 1,
+    "description": "Create a Skylands portal"
+}
+```
+
+Trigger it with a script event:
+
+```mcfunction
+scriptevent quest:progress "Player Name" skylands:portal_created 1
+```
+
+JSON payloads are also supported:
+
+```mcfunction
+scriptevent quest:progress {"player":"Player Name","event":"skylands:portal_created","amount":1}
+```
+
+For simple custom IDs, you can use the message ID directly:
+
+```mcfunction
+scriptevent quest:portal_created "Player Name" 1
+```
+
+If the script event sender is the player, the player name can be omitted:
+
+```mcfunction
+scriptevent quest:progress skylands:portal_created 1
+```
 
 ## Rewards
 

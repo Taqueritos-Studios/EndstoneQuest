@@ -21,6 +21,7 @@ OBJECTIVE_TYPES = [
     "consume",
     "brew",
     "breed",
+    "custom",
 ]
 
 OBJECTIVE_ALIASES = {
@@ -61,6 +62,9 @@ OBJECTIVE_ALIASES = {
     "consuming": "consume",
     "brewing": "brew",
     "breeding": "breed",
+    "script_event": "custom",
+    "scriptevent": "custom",
+    "custom_event": "custom",
 }
 
 EVENT_OBJECTIVE_TYPES = {
@@ -76,6 +80,7 @@ EVENT_OBJECTIVE_TYPES = {
     "deal_damage",
     "consume",
     "breed",
+    "custom",
 }
 
 
@@ -176,6 +181,17 @@ def default_config() -> dict[str, Any]:
             "walk_min_distance": 0.05,
             "walk_max_distance_per_event": 5.0,
             "smelt_credit_seconds": 600,
+            "custom_script_events_enabled": True,
+            "custom_script_event_ids": [
+                "quest:progress",
+                "quest:custom",
+                "endstonequest:progress",
+                "endstonequest:custom",
+            ],
+            "custom_script_event_prefixes": [
+                "quest:",
+                "endstonequest:",
+            ],
         },
         "messages": {
             "error.players_only": "&cOnly players can use this command.",

@@ -1,3 +1,5 @@
+import json
+import shlex
 import time
 from typing import Any
 
@@ -15,6 +17,7 @@ from endstone.event import (
     PlayerItemConsumeEvent,
     PlayerJoinEvent,
     PlayerMoveEvent,
+    ScriptMessageEvent,
     event_handler,
 )
 
@@ -307,6 +310,38 @@ class QuestListener:
             {"source": self.manager.item_type_id(event.source), "result": self.manager.item_type_id(event.result)},
         )
 
+    @event_handler(priority=EventPriority.MONITOR, ignore_cancelled=True)
+    def on_script_message(self, event: ScriptMessageEvent):
+        if not bool(self.manager.config.get("settings", {}).get("custom_script_events_enabled", True)):
+            return
+
+        parsed = self.parse_custom_script_event(event)
+        if parsed is None:
+            return
+
+        player_name, custom_id, amount = parsed
+        player = self.resolve_script_event_player(event.sender, player_name)
+        if player is None:
+            try:
+                self.manager.logger.debug(
+                    f"Could not resolve custom quest script event player '{player_name}' for '{custom_id}'."
+                )
+            except Exception:
+                pass
+            return
+
+        self.manager.progress_objective(
+            player,
+            "custom",
+            amount,
+            custom_id,
+            {
+                "message_id": event.message_id,
+                "script_message": event.message,
+                "sender": getattr(event.sender, "name", ""),
+            },
+        )
+
     def block_key(self, block: Any) -> str:
         try:
             dimension = str(block.dimension.name).lower()
@@ -339,3 +374,134 @@ class QuestListener:
 
         self.interaction_cooldowns[cooldown_key] = now + 0.75
         return False
+
+    def parse_custom_script_event(self, event: ScriptMessageEvent) -> tuple[str | None, str, float] | None:
+        message_id = str(event.message_id).strip()
+        message_id_lower = message_id.lower()
+        message = str(event.message or "").strip()
+
+        progress_ids = {
+            str(value).strip().lower()
+            for value in self.manager.config.get("settings", {}).get("custom_script_event_ids", [])
+        }
+        direct_custom_id = self.direct_custom_id_from_message_id(message_id, progress_ids)
+
+        if message_id_lower in progress_ids:
+            return self.parse_progress_script_payload(message)
+
+        if direct_custom_id is not None:
+            return self.parse_direct_script_payload(message, direct_custom_id)
+
+        return None
+
+    def direct_custom_id_from_message_id(self, message_id: str, progress_ids: set[str]) -> str | None:
+        message_id_lower = message_id.lower()
+        prefixes = self.manager.config.get("settings", {}).get("custom_script_event_prefixes", [])
+        for prefix in prefixes:
+            prefix_value = str(prefix).strip()
+            if not prefix_value:
+                continue
+
+            prefix_lower = prefix_value.lower()
+            if not message_id_lower.startswith(prefix_lower):
+                continue
+
+            custom_id = message_id[len(prefix_value):].strip()
+            if not custom_id or message_id_lower in progress_ids:
+                return None
+
+            return custom_id
+
+        return None
+
+    def parse_progress_script_payload(self, message: str) -> tuple[str | None, str, float] | None:
+        payload = self.parse_json_payload(message)
+        if payload is not None:
+            custom_id = payload.get("event") or payload.get("id") or payload.get("target") or payload.get("custom")
+            if not custom_id:
+                return None
+
+            return (
+                self.optional_string(payload.get("player") or payload.get("name")),
+                str(custom_id),
+                self.parse_script_amount(payload.get("amount"), 1.0),
+            )
+
+        parts = self.split_script_message(message)
+        if len(parts) >= 2:
+            return (parts[0], parts[1], self.parse_script_amount(parts[2] if len(parts) >= 3 else None, 1.0))
+        if len(parts) == 1:
+            return (None, parts[0], 1.0)
+        return None
+
+    def parse_direct_script_payload(self, message: str, custom_id: str) -> tuple[str | None, str, float] | None:
+        payload = self.parse_json_payload(message)
+        if payload is not None:
+            return (
+                self.optional_string(payload.get("player") or payload.get("name")),
+                str(payload.get("event") or payload.get("id") or payload.get("target") or custom_id),
+                self.parse_script_amount(payload.get("amount"), 1.0),
+            )
+
+        parts = self.split_script_message(message)
+        if len(parts) >= 2:
+            return (parts[0], custom_id, self.parse_script_amount(parts[1], 1.0))
+        if len(parts) == 1:
+            if self.is_number(parts[0]):
+                return (None, custom_id, self.parse_script_amount(parts[0], 1.0))
+            return (parts[0], custom_id, 1.0)
+        return (None, custom_id, 1.0)
+
+    def resolve_script_event_player(self, sender: Any, player_name: str | None) -> Any | None:
+        if player_name:
+            return self.manager.find_player(player_name)
+
+        if self.manager.is_player(sender):
+            return sender
+
+        return None
+
+    def parse_json_payload(self, message: str) -> dict[str, Any] | None:
+        if not message.startswith("{"):
+            return None
+
+        try:
+            payload = json.loads(message)
+        except Exception:
+            return None
+
+        return payload if isinstance(payload, dict) else None
+
+    def split_script_message(self, message: str) -> list[str]:
+        if not message:
+            return []
+
+        try:
+            return shlex.split(message)
+        except Exception:
+            return message.split()
+
+    def parse_script_amount(self, value: Any, default: float) -> float:
+        if value is None:
+            return default
+
+        try:
+            amount = float(value)
+        except Exception:
+            return default
+
+        return amount if amount > 0 else default
+
+    def optional_string(self, value: Any) -> str | None:
+        if value is None:
+            return None
+
+        text = str(value).strip()
+        return text or None
+
+    def is_number(self, value: Any) -> bool:
+        try:
+            float(value)
+        except Exception:
+            return False
+        return True
